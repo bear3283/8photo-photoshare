@@ -27,18 +27,18 @@ enum ShareDirection: String, CaseIterable, Identifiable, Codable {
         }
     }
     
-    var icon: String {
-        switch self {
-        case .top: return "⬆️"
-        case .topRight: return "↗️"
-        case .right: return "➡️"
-        case .bottomRight: return "↘️"
-        case .bottom: return "⬇️"
-        case .bottomLeft: return "↙️"
-        case .left: return "⬅️"
-        case .topLeft: return "↖️"
-        }
-    }
+//    var icon: String {
+//        switch self {
+//        case .top: return "⬆️"
+//        case .topRight: return "↗️"
+//        case .right: return "➡️"
+//        case .bottomRight: return "↘️"
+//        case .bottom: return "⬇️"
+//        case .bottomLeft: return "↙️"
+//        case .left: return "⬅️"
+//        case .topLeft: return "↖️"
+//        }
+//    }
     
     var systemIcon: String {
         switch self {

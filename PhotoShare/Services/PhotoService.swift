@@ -41,9 +41,6 @@ protocol PhotoServiceProtocol {
     func requestPhotoPermission() async -> Bool
     func loadPhotos(for date: Date) async -> [PhotoItem]
     func loadImage(for asset: PHAsset, context: ImageLoadingContext) async -> UIImage?
-    func toggleFavorite(for asset: PHAsset) async -> Bool
-    func savePhotoToCameraRoll(_ asset: PHAsset) async -> Bool
-    func deletePhoto(_ asset: PHAsset) async -> Bool
 }
 
 // MARK: - PhotoService Implementation
@@ -248,75 +245,10 @@ final class PhotoService: PhotoServiceProtocol {
         return image
     }
     
-    // MARK: - Photo Operations
-    func toggleFavorite(for asset: PHAsset) async -> Bool {
-        // Check if we have write permissions
-        let authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard authorizationStatus == .authorized else {
-            print("❌ Insufficient permissions to toggle favorite: \(authorizationStatus)")
-            return false
-        }
-        
-        let originalState = asset.isFavorite
-        print("🔄 Toggling favorite for asset: \(asset.localIdentifier) from \(originalState) to \(!originalState)")
-        
-        return await withCheckedContinuation { continuation in
-            PHPhotoLibrary.shared().performChanges({
-                let request = PHAssetChangeRequest(for: asset)
-                request.isFavorite = !originalState
-                print("📝 Change request created: setting isFavorite to \(!originalState)")
-            }) { success, error in
-                if let error = error {
-                    print("❌ Failed to toggle favorite: \(error.localizedDescription)")
-                    if let nsError = error as? NSError {
-                        print("   Error domain: \(nsError.domain), code: \(nsError.code)")
-                    }
-                } else if success {
-                    print("✅ Successfully toggled favorite: \(asset.localIdentifier) -> \(!originalState)")
-                } else {
-                    print("⚠️ Toggle favorite returned false but no error")
-                }
-                continuation.resume(returning: success)
-            }
-        }
-    }
     
-    func savePhotoToCameraRoll(_ asset: PHAsset) async -> Bool {
-        return await withCheckedContinuation { continuation in
-            let options = PHContentEditingInputRequestOptions()
-            options.isNetworkAccessAllowed = true
-            
-            asset.requestContentEditingInput(with: options) { editingInput, _ in
-                guard let input = editingInput,
-                      let imageURL = input.fullSizeImageURL else {
-                    continuation.resume(returning: false)
-                    return
-                }
-                
-                PHPhotoLibrary.shared().performChanges({
-                    PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL: imageURL)
-                }) { success, error in
-                    if let error = error {
-                        print("❌ Failed to save photo: \(error.localizedDescription)")
-                    }
-                    continuation.resume(returning: success)
-                }
-            }
-        }
-    }
     
-    func deletePhoto(_ asset: PHAsset) async -> Bool {
-        return await withCheckedContinuation { continuation in
-            PHPhotoLibrary.shared().performChanges({
-                PHAssetChangeRequest.deleteAssets([asset] as NSArray)
-            }) { success, error in
-                if let error = error {
-                    print("❌ Failed to delete photo: \(error.localizedDescription)")
-                }
-                continuation.resume(returning: success)
-            }
-        }
-    }
+    
+    
     
     // MARK: - Cache Management
     func clearImageCache() {

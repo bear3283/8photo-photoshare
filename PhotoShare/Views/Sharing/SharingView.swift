@@ -127,7 +127,7 @@ struct SharingView: View {
                     .padding(.horizontal, 24)
                     .padding(.bottom, 34) // Safe area padding
                 }
-                .navigationTitle("PhotoShare")
+                .navigationTitle("\(DateFormatter.photoTitle.string(from: photoViewModel.selectedDate))")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
@@ -146,7 +146,7 @@ struct SharingView: View {
                     }
                     
                 }
-                .background(theme.primaryBackground.ignoresSafeArea())
+//                .background(theme.primaryBackground.ignoresSafeArea())
                 
                 // Overlay Date Picker
                 if showingDatePicker {
@@ -323,16 +323,16 @@ struct SharingView: View {
                                     .fontWeight(.medium)
                                     .foregroundColor(theme.secondaryText)
                                 
-                                Text("\(DateFormatter.photoTitle.string(from: photoViewModel.selectedDate))")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(theme.accentColor)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 4)
-                                    .background(
-                                        Capsule()
-                                            .fill(theme.accentColor.opacity(0.1))
-                                    )
+//                                Text("\(DateFormatter.photoTitle.string(from: photoViewModel.selectedDate))")
+//                                    .font(.caption)
+//                                    .fontWeight(.medium)
+//                                    .foregroundColor(theme.accentColor)
+//                                    .padding(.horizontal, 12)
+//                                    .padding(.vertical, 4)
+//                                    .background(
+//                                        Capsule()
+//                                            .fill(theme.accentColor.opacity(0.1))
+//                                    )
                                 
                                 Text("상단의 달력 아이콘을 눌러 다른 날짜를 선택해보세요")
                                     .font(.subheadline)

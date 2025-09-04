@@ -194,54 +194,7 @@ final class PhotoViewModel: ViewModelProtocol {
         print("⚡ 낙관적 업데이트: \(originalState) -> \(newState)")
         
         // 2. Perform actual PHAsset update
-        let success = await photoService.toggleFavorite(for: photo.asset)
         
-        if success {
-            print("✅ 즐겨찾기 성공: \(photo.id) -> \(newState)")
-            
-            // Wait a bit for PHAsset to update, then clear local state
-            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
-            
-            // Memory safe update - check bounds again after async operation
-            guard index >= 0 && index < state.photos.count else {
-                print("⚠️ Index out of bounds after async operation: \(index)/\(state.photos.count)")
-                return
-            }
-            
-            // Atomic update using array replacement
-            var refreshedPhotos = state.photos
-            refreshedPhotos[index].localFavoriteState = nil
-            state.photos = refreshedPhotos
-            
-            print("🔄 UI 새로 고침 완룄")
-            
-            // Clear any error messages
-            state.errorMessage = nil
-            
-        } else {
-            print("❌ 즐겨찾기 실패: \(photo.id)")
-            
-            // Rollback optimistic update - MEMORY SAFE
-            guard index >= 0 && index < state.photos.count else {
-                print("⚠️ Cannot rollback: index out of bounds \(index)/\(state.photos.count)")
-                return
-            }
-            
-            // Atomic rollback using array replacement  
-            var rolledBackPhotos = state.photos
-            rolledBackPhotos[index].localFavoriteState = originalState
-            state.photos = rolledBackPhotos
-            
-            state.errorMessage = "즐겨찾기 변경에 실패했습니다. 다시 시도해 주세요."
-            
-            // Clear error message after 3 seconds
-            Task {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                if state.errorMessage?.contains("즐겨찾기") == true {
-                    state.errorMessage = nil
-                }
-            }
-        }
     }
     
     private func markPhotoForDeletion(_ photo: PhotoItem) async {
@@ -296,41 +249,21 @@ final class PhotoViewModel: ViewModelProtocol {
     private func processMarkedPhotos() async {
         print("🔄 배치 처리 시작...")
         
-        let photosToDelete = state.photos.filter { $0.isMarkedForDeletion }
-        let photosToSave = state.photos.filter { $0.isMarkedForSaving }
-        
-        var deletedCount = 0
-        var savedCount = 0
         
         // 삭제 마킹된 사진들 실제 삭제
-        for photo in photosToDelete {
-            let success = await photoService.deletePhoto(photo.asset)
-            if success {
-                state.photos.removeAll { $0.id == photo.id }
-                deletedCount += 1
-                print("🗑️ 사진 삭제 완료: \(photo.id)")
-            } else {
-                // 실패 시 마킹 해제
-                if let index = state.photos.firstIndex(where: { $0.id == photo.id }) {
-                    state.photos[index].isMarkedForDeletion = false
-                }
-                print("❌ 사진 삭제 실패: \(photo.id)")
-            }
-        }
+        
         
         // 보관 마킹된 사진들 - 실제로는 아무 작업도 하지 않음 (실제 사진앱처럼)
-        for photo in photosToSave {
-            if state.photos.firstIndex(where: { $0.id == photo.id }) != nil {
-                // 마킹만 유지하고 실제 복제는 하지 않음
-                savedCount += 1
-                print("💚 사진 보관 처리 완료: \(photo.id) - 복제 없이 마킹만 유지")
-            }
-        }
+//        for photo in photosToSave {
+//            if state.photos.firstIndex(where: { $0.id == photo.id }) != nil {
+//                // 마킹만 유지하고 실제 복제는 하지 않음
+//                savedCount += 1
+//                print("💚 사진 보관 처리 완료: \(photo.id) - 복제 없이 마킹만 유지")
+//            }
+//        }
         
         // 결과 메시지 설정
         var resultMessages: [String] = []
-        if deletedCount > 0 { resultMessages.append("\(deletedCount)개 삭제") }
-        if savedCount > 0 { resultMessages.append("\(savedCount)개 보관") }
         
         if !resultMessages.isEmpty {
             print("✅ 배치 처리 완료: \(resultMessages.joined(separator: ", "))")
