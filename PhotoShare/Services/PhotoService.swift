@@ -2,97 +2,51 @@ import Foundation
 import Photos
 import UIKit
 
-// Use existing constants from PhotoConstants and PerformanceConstants
-
-// MARK: - Image Loading Context
-enum ImageLoadingContext: Hashable {
-    case thumbnail
-    case fullscreen
-    
-    var targetSize: CGSize {
-        switch self {
-        case .thumbnail:
-            return CGSize(width: 500, height: 500)
-        case .fullscreen:
-            return CGSize(width: PhotoConstants.maxImageSize, height: PhotoConstants.maxImageSize)
-        }
-    }
-    
-    var requestOptions: PHImageRequestOptions {
-        let options = PHImageRequestOptions()
-        options.isNetworkAccessAllowed = true
-        options.isSynchronous = false
-        
-        switch self {
-        case .thumbnail:
-            options.deliveryMode = .highQualityFormat
-            options.resizeMode = .exact
-        case .fullscreen:
-            options.deliveryMode = .highQualityFormat
-            options.resizeMode = .exact
-        }
-        
-        return options
-    }
-}
-
-// MARK: - PhotoService Protocol
+// MARK: - Simple and Reliable PhotoService
 protocol PhotoServiceProtocol {
     func requestPhotoPermission() async -> Bool
     func loadPhotos(for date: Date) async -> [PhotoItem]
-    func loadImage(for asset: PHAsset, context: ImageLoadingContext) async -> UIImage?
+    func loadImage(for asset: PHAsset, context: ImageLoadContext) async -> UIImage?
 }
 
-// MARK: - PhotoService Implementation
+enum ImageLoadContext {
+    case thumbnail
+    case fullscreen
+}
+
 final class PhotoService: PhotoServiceProtocol {
-    private let imageManager = PHCachingImageManager()
-    private let imageCache = NSCache<NSString, UIImage>()
-    private let accessQueue = DispatchQueue(label: "PhotoService.access", attributes: .concurrent)
-    
-    init() {
-        setupImageCache()
-    }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
-    
-    private func setupImageCache() {
-        imageCache.countLimit = PhotoConstants.imageCacheLimit
-        imageCache.totalCostLimit = 100 * 1024 * 1024 // 100MB limit
-        
-        // Handle memory warnings
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.didReceiveMemoryWarningNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.handleMemoryWarning()
-        }
-    }
+    private let imageManager = PHImageManager.default()
     
     // MARK: - Permission Management
     func requestPhotoPermission() async -> Bool {
+        print("📱 권한 요청 시작")
+        
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        print("📱 현재 권한 상태: \(status.rawValue)")
         
         switch status {
         case .authorized, .limited:
+            print("✅ 권한 이미 승인됨")
             return true
         case .notDetermined:
+            print("❓ 권한 결정되지 않음, 요청 중...")
             let newStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+            print("📱 새로운 권한 상태: \(newStatus.rawValue)")
             return newStatus == .authorized || newStatus == .limited
-        default:
+        case .denied, .restricted:
+            print("❌ 권한 거부됨")
+            return false
+        @unknown default:
+            print("❓ 알 수 없는 권한 상태")
             return false
         }
     }
     
-    // MARK: - Photo Loading (Memory Safe Version)
+    // MARK: - Simple Photo Loading
     func loadPhotos(for date: Date) async -> [PhotoItem] {
-        let dateKey = DateFormatter.photoTitle.string(from: date)
+        print("📸 사진 로딩 시작: \(DateFormatter.photoTitle.string(from: date))")
         
-        print("📸 사진 로딩 시작: \(dateKey)")
-        let startTime = CFAbsoluteTimeGetCurrent()
-        
+        // 날짜 범위 설정
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: date)
         guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
@@ -100,6 +54,9 @@ final class PhotoService: PhotoServiceProtocol {
             return []
         }
         
+        print("📅 검색 범위: \(startOfDay) ~ \(endOfDay)")
+        
+        // PHAsset 가져오기
         let fetchOptions = PHFetchOptions()
         fetchOptions.predicate = NSPredicate(
             format: "creationDate >= %@ AND creationDate < %@",
@@ -109,173 +66,101 @@ final class PhotoService: PhotoServiceProtocol {
         fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         
         let assets = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+        print("🔍 발견된 PHAsset 수: \(assets.count)")
+        
         guard assets.count > 0 else {
-            print("📭 선택한 날짜에 사진 없음: \(dateKey)")
+            print("📭 선택한 날짜에 사진 없음")
             return []
         }
         
-        // Convert PHAssets to array
-        let assetArray = (0..<assets.count).map { assets.object(at: $0) }
-        print("🔍 발견된 사진: \(assetArray.count)장")
-        
-        // Memory-safe sequential loading
+        // 순차적으로 이미지 로딩 (안정성 우선)
         var photoItems: [PhotoItem] = []
-        photoItems.reserveCapacity(assetArray.count)
         
-        // Process assets sequentially to avoid memory issues
-        for (index, asset) in assetArray.enumerated() {
-            // Enhanced asset validation to prevent crashes
-            guard !asset.localIdentifier.isEmpty,
-                  asset.localIdentifier.count > 0 else {
-                print("⚠️ Invalid PHAsset at index \(index), skipping")
-                continue
-            }
+        for i in 0..<assets.count {
+            let asset = assets.object(at: i)
+            print("📸 이미지 \(i+1)/\(assets.count) 로딩 중... ID: \(asset.localIdentifier)")
             
-            let image = await loadImage(for: asset, context: .thumbnail)
-            
-            // Safe date extraction
-            let creationDate = asset.creationDate ?? date
-            
+            let image = await loadImageSimple(for: asset)
             let photoItem = PhotoItem(
                 asset: asset,
                 image: image,
-                dateCreated: creationDate
+                dateCreated: asset.creationDate ?? date
             )
             
             photoItems.append(photoItem)
+            print("✅ 이미지 \(i+1) 로딩 완료 - 성공: \(image != nil)")
         }
         
-        // Sort by creation date (newest first)
-        photoItems.sort { $0.dateCreated > $1.dateCreated }
-        
-        let loadTime = CFAbsoluteTimeGetCurrent() - startTime
-        print("⚡ 사진 로딩 완료: \(photoItems.count)장 (\(String(format: "%.2f", loadTime))초)")
-        
+        print("🎉 전체 로딩 완료: \(photoItems.count)장")
         return photoItems
     }
     
-    // MARK: - Image Loading (Memory Safe Version)
-    func loadImage(for asset: PHAsset, context: ImageLoadingContext) async -> UIImage? {
-        // Enhanced asset validation to prevent crashes
-        guard !asset.localIdentifier.isEmpty,
-              asset.localIdentifier.count > 0 else {
-            print("❌ Invalid asset identifier for image loading")
-            return nil
+    // MARK: - Public Image Loading
+    func loadImage(for asset: PHAsset, context: ImageLoadContext) async -> UIImage? {
+        let targetSize: CGSize
+        let deliveryMode: PHImageRequestOptionsDeliveryMode
+        
+        switch context {
+        case .thumbnail:
+            targetSize = CGSize(width: 200, height: 200)
+            deliveryMode = .opportunistic
+        case .fullscreen:
+            targetSize = PHImageManagerMaximumSize
+            deliveryMode = .highQualityFormat
         }
         
-        let cacheKey = "\(asset.localIdentifier)_\(context)"
-        
-        // Check cache first
-        if let cachedImage = imageCache.object(forKey: cacheKey as NSString) {
-            return cachedImage
-        }
-        
-        // Simple and safe image loading without continuation issues
-        let image = await withCheckedContinuation { (continuation: CheckedContinuation<UIImage?, Never>) in
-            let requestOptions = context.requestOptions
-            let targetSize = context.targetSize
+        return await loadImageWithSize(for: asset, targetSize: targetSize, deliveryMode: deliveryMode)
+    }
+    
+    // MARK: - Simple Image Loading
+    private func loadImageSimple(for asset: PHAsset) async -> UIImage? {
+        return await loadImageWithSize(for: asset, targetSize: CGSize(width: 200, height: 200), deliveryMode: .opportunistic)
+    }
+    
+    private func loadImageWithSize(for asset: PHAsset, targetSize: CGSize, deliveryMode: PHImageRequestOptionsDeliveryMode) async -> UIImage? {
+        return await withCheckedContinuation { continuation in
+            let options = PHImageRequestOptions()
+            options.isSynchronous = false
+            options.isNetworkAccessAllowed = true
+            options.deliveryMode = deliveryMode
             
-            requestOptions.isNetworkAccessAllowed = true
-            requestOptions.isSynchronous = false
-            requestOptions.deliveryMode = .fastFormat // Fast delivery to avoid multiple callbacks
+            print("🖼️ 이미지 요청: \(asset.localIdentifier), 크기: \(targetSize)")
             
-            if #available(iOS 13.0, *) {
-                requestOptions.version = .current
-            }
-            
-            var hasCompleted = false
-            let completionLock = NSLock()
-            
-            // Set up timeout
-            DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
-                completionLock.lock()
-                if !hasCompleted {
-                    hasCompleted = true
-                    completionLock.unlock()
-                    continuation.resume(returning: nil)
-                } else {
-                    completionLock.unlock()
-                }
-            }
-            
-            // Request image
             imageManager.requestImage(
                 for: asset,
                 targetSize: targetSize,
                 contentMode: .aspectFill,
-                options: requestOptions
+                options: options
             ) { image, info in
-                completionLock.lock()
-                
-                guard !hasCompleted else {
-                    completionLock.unlock()
-                    return
-                }
-                
-                // Check for errors
+                // 에러 체크
                 if let error = info?[PHImageErrorKey] as? Error {
                     print("❌ 이미지 로딩 에러: \(error.localizedDescription)")
-                    hasCompleted = true
-                    completionLock.unlock()
                     continuation.resume(returning: nil)
                     return
                 }
                 
-                // Check if cancelled
+                // 취소 체크
                 if let cancelled = info?[PHImageCancelledKey] as? Bool, cancelled {
-                    hasCompleted = true
-                    completionLock.unlock()
+                    print("⚠️ 이미지 로딩 취소됨")
                     continuation.resume(returning: nil)
                     return
                 }
                 
-                // Accept the image
-                hasCompleted = true
-                completionLock.unlock()
-                continuation.resume(returning: image)
-            }
-        }
-        
-        // Cache the result if successful
-        if let image = image {
-            let cost = Int(image.size.width * image.size.height * 4) // Approximate memory cost
-            imageCache.setObject(image, forKey: cacheKey as NSString, cost: cost)
-        }
-        
-        return image
-    }
-    
-    
-    
-    
-    
-    
-    // MARK: - Cache Management
-    func clearImageCache() {
-        accessQueue.async(flags: .barrier) { [weak self] in
-            self?.imageCache.removeAllObjects()
-            DispatchQueue.main.async {
-                print("🗑️ 이미지 캐시 정리 완료")
-            }
-        }
-    }
-    
-    func getCacheInfo() -> (count: Int, cost: Int) {
-        return (count: imageCache.countLimit, cost: imageCache.totalCostLimit)
-    }
-    
-    private func handleMemoryWarning() {
-        print("⚠️ 메모리 경고 - 캐시 정리 시작")
-        
-        accessQueue.async(flags: .barrier) { [weak self] in
-            guard let self = self else { return }
-            
-            // Aggressively clear cache on memory warnings
-            self.imageManager.stopCachingImagesForAllAssets()
-            self.imageCache.removeAllObjects()
-            
-            DispatchQueue.main.async {
-                print("💾 메모리 경고 캐시 정리 완료")
+                // 최종 이미지인지 확인 (중요!)
+                let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+                
+                if !isDegraded {
+                    // 최종 고품질 이미지만 반환
+                    if let image = image {
+                        print("✅ 이미지 로딩 성공: \(image.size)")
+                    } else {
+                        print("⚠️ 이미지가 nil")
+                    }
+                    continuation.resume(returning: image)
+                } else {
+                    // 중간 품질 이미지는 무시 (continuation을 resume하지 않음)
+                    print("⏳ 중간 품질 이미지 수신됨, 최종 이미지 대기 중...")
+                }
             }
         }
     }

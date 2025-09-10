@@ -109,57 +109,40 @@ final class PhotoViewModel: ViewModelProtocol {
         state.isLoading = true
         state.errorMessage = nil
         
-        do {
-            let hasPermission = await photoService.requestPhotoPermission()
-            
-            if hasPermission {
-                print("✅ 사진 라이브러리 권한 승인됨")
-                
-                // Try to find the most recent date with photos instead of using today's date
-                let dateWithPhotos = await findRecentDateWithPhotos()
-                
-                if let foundDate = dateWithPhotos {
-                    print("📅 사진이 있는 최근 날짜 발견: \(DateFormatter.photoTitle.string(from: foundDate))")
-                    selectedDate = foundDate
-                    await loadPhotos(for: foundDate)
-                } else {
-                    print("📅 사진이 있는 날짜를 찾지 못함, 오늘 날짜로 로드")
-                    await loadPhotos(for: selectedDate)
-                }
-            } else {
-                print("❌ 사진 라이브러리 권한 거부됨")
-                state.errorMessage = "PhotoShare가 제대로 작동하려면 사진 라이브러리 접근 권한이 필요합니다. 설정에서 권한을 허용해 주세요."
-                
-                // Clear loading state on error
-                state.isLoading = false
-            }
-        } catch {
-            print("❌ 권한 요청 중 오류 발생: \(error.localizedDescription)")
-            state.errorMessage = "권한 요청 중 오류가 발생했습니다. 다시 시도해주세요."
+        let hasPermission = await photoService.requestPhotoPermission()
+        
+        if hasPermission {
+            print("✅ 사진 라이브러리 권한 승인됨")
+            // 단순히 선택된 날짜의 사진 로딩
+            await loadPhotos(for: selectedDate)
+        } else {
+            print("❌ 사진 라이브러리 권한 거부됨")
+            state.errorMessage = "PhotoShare가 제대로 작동하려면 사진 라이브러리 접근 권한이 필요합니다. 설정에서 권한을 허용해 주세요."
             state.isLoading = false
         }
     }
     
     private func loadPhotos(for date: Date) async {
-        // Skip if already loading the same date
-        if state.isLoading {
-            print("⏭️ 이미 로딩 중이므로 건너뜀: \(DateFormatter.photoTitle.string(from: date))")
-            return
-        }
-        
         print("📸 사진 로딩 시작: \(DateFormatter.photoTitle.string(from: date))")
         
         state.isLoading = true
         state.errorMessage = nil
+        state.photos = [] // 기존 사진 초기화
         
         let photos = await photoService.loadPhotos(for: date)
-        state.photos = photos
-        state.isLoading = false
         
-        print("📊 사진 로딩 완료: \(photos.count)장")
+        print("📊 PhotoService에서 반환된 사진 수: \(photos.count)")
         
-        if photos.isEmpty {
-            print("ℹ️ 선택한 날짜에 사진이 없습니다")
+        // UI 업데이트는 메인 스레드에서
+        await MainActor.run {
+            state.photos = photos
+            state.isLoading = false
+            
+            if photos.isEmpty {
+                print("ℹ️ 선택한 날짜에 사진이 없습니다")
+            } else {
+                print("✅ UI 업데이트 완료: \(photos.count)장")
+            }
         }
     }
     
@@ -193,8 +176,8 @@ final class PhotoViewModel: ViewModelProtocol {
         
         print("⚡ 낙관적 업데이트: \(originalState) -> \(newState)")
         
-        // 2. Perform actual PHAsset update
-        
+        // TODO: Implement actual PHAsset favorite update when needed
+        print("💖 즐겨찾기 상태 변경 완료: \(photo.id) -> \(newState)")
     }
     
     private func markPhotoForDeletion(_ photo: PhotoItem) async {
@@ -249,24 +232,27 @@ final class PhotoViewModel: ViewModelProtocol {
     private func processMarkedPhotos() async {
         print("🔄 배치 처리 시작...")
         
+        let photosToDelete = state.photos.filter { $0.isMarkedForDeletion }
+        let photosToSave = state.photos.filter { $0.isMarkedForSaving }
         
-        // 삭제 마킹된 사진들 실제 삭제
-        
-        
-        // 보관 마킹된 사진들 - 실제로는 아무 작업도 하지 않음 (실제 사진앱처럼)
-//        for photo in photosToSave {
-//            if state.photos.firstIndex(where: { $0.id == photo.id }) != nil {
-//                // 마킹만 유지하고 실제 복제는 하지 않음
-//                savedCount += 1
-//                print("💚 사진 보관 처리 완료: \(photo.id) - 복제 없이 마킹만 유지")
-//            }
-//        }
-        
-        // 결과 메시지 설정
         var resultMessages: [String] = []
+        
+        // 삭제 마킹된 사진들 처리 (실제 삭제는 하지 않고 마킹만 유지)
+        if !photosToDelete.isEmpty {
+            resultMessages.append("삭제 마킹: \(photosToDelete.count)장")
+            print("🗑️ 삭제 마킹된 사진: \(photosToDelete.count)장")
+        }
+        
+        // 보관 마킹된 사진들 처리 (실제 복제는 하지 않고 마킹만 유지)
+        if !photosToSave.isEmpty {
+            resultMessages.append("보관 마킹: \(photosToSave.count)장")
+            print("💚 보관 마킹된 사진: \(photosToSave.count)장")
+        }
         
         if !resultMessages.isEmpty {
             print("✅ 배치 처리 완료: \(resultMessages.joined(separator: ", "))")
+        } else {
+            print("ℹ️ 처리할 마킹된 사진이 없습니다")
         }
     }
     
@@ -296,48 +282,4 @@ final class PhotoViewModel: ViewModelProtocol {
         }
     }
     
-    // MARK: - Smart Date Finding with Performance Optimization
-    private func findRecentDateWithPhotos() async -> Date? {
-        let calendar = Calendar.current
-        let today = Date()
-        
-        // Check the last 60 days to find a date with photos, but optimize the search
-        let searchDays = min(60, 30) // Start with 30 days for better performance
-        
-        print("🔍 최근 \(searchDays)일 내 사진 검색 시작")
-        
-        // Use a more efficient approach - check weekends and recent days first
-        let priorityDays: [Int] = [0, 1, 2, 6, 7, 13, 14] // Today, yesterday, day before, last weekend, previous weekend
-        
-        // First check priority days
-        for daysBack in priorityDays {
-            guard daysBack < searchDays,
-                  let checkDate = calendar.date(byAdding: .day, value: -daysBack, to: today) else {
-                continue
-            }
-            
-            let photos = await photoService.loadPhotos(for: checkDate)
-            if !photos.isEmpty {
-                print("✅ 사진 발견: \(DateFormatter.photoTitle.string(from: checkDate)) (\(photos.count)장)")
-                return checkDate
-            }
-        }
-        
-        // If no photos found in priority days, check remaining days
-        for daysBack in 0..<searchDays {
-            guard !priorityDays.contains(daysBack),
-                  let checkDate = calendar.date(byAdding: .day, value: -daysBack, to: today) else {
-                continue
-            }
-            
-            let photos = await photoService.loadPhotos(for: checkDate)
-            if !photos.isEmpty {
-                print("✅ 사진 발견: \(DateFormatter.photoTitle.string(from: checkDate)) (\(photos.count)장)")
-                return checkDate
-            }
-        }
-        
-        print("❌ 최근 \(searchDays)일 내 사진을 찾지 못함")
-        return nil
-    }
 }

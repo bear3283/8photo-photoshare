@@ -19,7 +19,7 @@ struct SpringThemeColors: ThemeColors {
     }
     
     var accentColor: Color {
-        Color(red: 0.2, green: 0.7, blue: 0.4)
+        Color(red: 1.0, green: 0.2, blue: 0.2) // 뚜렷한 빨간색으로 테스트
     }
     
     var primaryBackground: LinearGradient {
@@ -60,7 +60,7 @@ struct SpringThemeColors: ThemeColors {
     }
     
     var primaryText: Color {
-        Color(red: 0.3, green: 0.6, blue: 0.5)
+        Color(red: 0.1, green: 0.1, blue: 0.9) // 뚜렷한 파란색으로 테스트
     }
     
     var secondaryText: Color {

@@ -33,8 +33,8 @@ struct PhotoConstants {
     /// 최대 이미지 크기 (메모리 최적화용)
     static let maxImageSize: CGFloat = 1024
     
-    /// 이미지 캐시 한도 (개수)
-    static let imageCacheLimit: Int = 50
+    /// 이미지 캐시 한도 (개수) - 성능 최적화로 증가
+    static let imageCacheLimit: Int = 200
     
     // MARK: - UI Dimensions
     
@@ -112,12 +112,21 @@ struct AccessibilityConstants {
 /// 성능 관련 상수
 struct PerformanceConstants {
     
-    /// 이미지 로딩 타임아웃
-    static let imageLoadTimeout: TimeInterval = 10.0
+    /// 이미지 로딩 타임아웃 - 성능 최적화로 단축
+    static let imageLoadTimeout: TimeInterval = 2.0
+    
+    /// 썸네일 이미지 로딩 타임아웃 - 더 빠른 응답
+    static let thumbnailLoadTimeout: TimeInterval = 1.0
     
     /// 백그라운드 큐 QoS
     static let backgroundQoS: DispatchQoS.QoSClass = .userInitiated
     
     /// 메모리 경고 시 캐시 정리 비율
     static let memoryClearRatio: Double = 0.5
+    
+    /// 동시 로딩 최대 개수
+    static let maxConcurrentLoads: Int = 8
+    
+    /// 썸네일 최적 크기 - 성능과 품질 균형
+    static let optimizedThumbnailSize: CGFloat = 200
 }

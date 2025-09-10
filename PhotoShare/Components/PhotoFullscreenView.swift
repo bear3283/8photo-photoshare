@@ -6,6 +6,17 @@
 //
 
 import SwiftUI
+import Photos
+
+// MARK: - Custom Button Styles
+struct PressedButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.90 : 1.0)
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
 
 struct PhotoFullscreenView: View {
     let photo: PhotoItem
@@ -140,6 +151,10 @@ struct PhotoFullscreenView: View {
             VStack {
                 HStack {
                     Button("완료") {
+                        // Add haptic feedback for dismiss
+                        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                        impactFeedback.impactOccurred()
+                        
                         isPresented = false
                     }
                     .font(.headline)
@@ -149,8 +164,10 @@ struct PhotoFullscreenView: View {
                     .padding(.vertical, 8)
                     .background(
                         Capsule()
-                            .fill(Color.black.opacity(0.3))
+                            .fill(.regularMaterial)
+                            .opacity(0.8)
                     )
+                    .buttonStyle(PressedButtonStyle())
                     
                     Spacer()
                     
@@ -177,7 +194,11 @@ struct PhotoFullscreenView: View {
                 // Previous photo
                 if selectedIndex > 0 {
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        // Add haptic feedback for navigation
+                        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                        impactFeedback.impactOccurred()
+                        
+                        withAnimation(.easeInOut(duration: 0.3)) {
                             selectedIndex -= 1
                             resetZoomAndPan()
                         }
@@ -186,13 +207,15 @@ struct PhotoFullscreenView: View {
                             .font(.title2)
                             .fontWeight(.semibold)
                             .foregroundColor(.white)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 48, height: 48)
                             .background(
                                 Circle()
-                                    .fill(Color.black.opacity(0.3))
+                                    .fill(.regularMaterial)
+                                    .opacity(0.8)
                             )
                     }
                     .padding(.leading, 20)
+                    .buttonStyle(PressedButtonStyle())
                 }
                 
                 Spacer()
@@ -200,7 +223,11 @@ struct PhotoFullscreenView: View {
                 // Next photo
                 if selectedIndex < photos.count - 1 {
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        // Add haptic feedback for navigation
+                        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                        impactFeedback.impactOccurred()
+                        
+                        withAnimation(.easeInOut(duration: 0.3)) {
                             selectedIndex += 1
                             resetZoomAndPan()
                         }
@@ -209,13 +236,15 @@ struct PhotoFullscreenView: View {
                             .font(.title2)
                             .fontWeight(.semibold)
                             .foregroundColor(.white)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 48, height: 48)
                             .background(
                                 Circle()
-                                    .fill(Color.black.opacity(0.3))
+                                    .fill(.regularMaterial)
+                                    .opacity(0.8)
                             )
                     }
                     .padding(.trailing, 20)
+                    .buttonStyle(PressedButtonStyle())
                 }
             }
             
@@ -309,10 +338,21 @@ struct PhotoFullscreenView: View {
 }
 
 #Preview {
-    PhotoFullscreenView(
-        photo: PreviewData.samplePhotos.first!,
-        photos: PreviewData.samplePhotos,
+    @State var isPresented = true
+    
+    // 샘플 PhotoItem 생성 (실제 PHAsset 없이 테스트용)
+    let samplePhotos: [PhotoItem] = [
+        PhotoItem(
+            asset: PHAsset(), // 빈 asset (preview용)
+            image: UIImage(systemName: "photo")!,
+            dateCreated: Date()
+        )
+    ]
+    
+    return PhotoFullscreenView(
+        photo: samplePhotos[0],
+        photos: samplePhotos,
         isPresented: .constant(true)
     )
-    .environment(\.theme, SpringThemeColors())
+    .environment(\.theme, ThemeViewModel().colors)
 }
